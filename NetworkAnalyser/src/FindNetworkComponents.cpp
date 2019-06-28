@@ -186,10 +186,10 @@ int main(int argc, char *argv[]) {
 				}
 			}
 		}
-		if(mask % 10000 == 0) {
-			printf("%lld\n", mask);
-			printf("%d\n", result.size());
+		if(mask % 1000 == 0) {
+			printf("%.2lf%% processed, %d components found.\n", (double)mask/(double)(1<<17)*100, result.size());
 		}
+
 	}
 
 	sort(result.begin(), result.end());
@@ -276,32 +276,47 @@ int main(int argc, char *argv[]) {
 		
 		fprintf(outputfile,"2 ");
 		int basecount=0;
-		int atissues = 0, btissues=0;
-		for (int j = 0; j < 17; j++) {
-			if (((mask / (1 << j)) % 2) == 1)
+		long long atissues = 0, btissues=0;
+		long long counter = 1;
+		for (int j = 0; j < 17; j++, counter *= 2) {
+			if (((mask / counter) % 2) == 1)
 				fprintf(outputfile, "%s ", types[16-j]), basecount++;
 		}
-
+		counter = 1;
 		fprintf(outputfile,"\n3 ");
-		for (int j = 0; j < 17; j++) {
+		for (int j = 0; j < 17; j++, counter *= 2) {
+			atissues *= 2;
 			if (more_types[j] == true)
 				fprintf(outputfile, "%s ", types[16-j]), atissues += 1;
-			atissues <<= 1;
+			
 		}
 		
 		fprintf(outputfile,"\n4 ");
-		for (int j = 0; j < 17; j++) {
+		for (int j = 0; j < 17; j++, counter *= 2) {
+			btissues *= 2;
 			if (less_types[j] == true)
 				fprintf(outputfile, "%s ", types[16-j]), btissues+= 1;
-			btissues <<= 1;
 		}
 		fprintf(outputfile, "\n");
 		
 		fprintf(outputfile,"5 %lld %lld\n", number_to_vertex[one_edge_end], number_to_vertex[another_edge_end]);
 
 
-		fprintf(csv_outputfile, "%d,%d,%d,%d,%lld,", component.size(),component_edge_count,tmp,basecount,mask);
-		fprintf(csv_outputfile,"%d,%d,%d,%d,%lld,%lld\n",more_count, atissues, less_count,btissues ,number_to_vertex[one_edge_end], number_to_vertex[another_edge_end]);
+		long long amask=0, bmask=0;
+		long long MASK = 0;
+		counter = 1;
+		for (int j = 0; j < 17; j++,counter*=2) {
+			MASK *= 2;
+			
+			if ((mask / counter) % 2 == 1) {
+				MASK +=1;
+			}
+		}
+		amask = atissues;
+		bmask = btissues;
+		
+		fprintf(csv_outputfile, "%d,%d,%d,%d,%lld,", component.size(),component_edge_count / 2,tmp,basecount,MASK);
+		fprintf(csv_outputfile,"%d,%lld,%d,%lld,%lld,%lld\n",more_count, amask, less_count, bmask ,number_to_vertex[one_edge_end], number_to_vertex[another_edge_end]);
 				
 
 	}

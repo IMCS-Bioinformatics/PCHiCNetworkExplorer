@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <title>Network | Basic usage</title>
+
+        <link href="../Utils/vis-network.min.css" rel="stylesheet" type="text/css" />
+        <link href="../Utils/bootstrap.min.css" rel="stylesheet" type="text/css" />
+
+        <style type="text/css">
+            #mynetwork {
+                height: 1000px;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="chrCheck"></div>
+        <div id="tissuesCheck"></div>
+        <div id="mynetwork"></div>
+        <div><p  id="title"></p></div>
+
+        <script type="text/javascript" src="../Utils/d3.min.js"></script>
+        <script type="text/javascript" src="../Utils/vis-network.min.js"></script>
+        <script type="text/javascript" src="../Utils/underscore-min.js"></script>
+        <script type="text/javascript" src="../Utils/jquery-3.1.1.min.js"></script>
+        <script type="text/javascript" src="../Utils/bootstrap.min.js"></script>
+        <!-- <script type="text/javascript" src="../Utils/draw-mark.js"></script> -->
+
+        <script type="text/javascript">
+          var chrs = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X"]
+          var tissues = ['Mon', 'Mac0', 'Mac1', 'Mac2', 'Neu', 'MK', 'EP', 'Ery', 'FoeT', 'nCD4', 'tCD4', 'aCD4', 'naCD4', 'nCD8', 'tCD8', 'nB', 'tB']
+          var ch;
+          var gfileName = "./segmTissueBitsGraph17-log-mark.json";
+          var chrsdata;
+          var compdata;
+          var currCompdata;
+          var alldata;
+          var baseEdges;
+          var nodeMap = {};
+          var ninfo = -1;
+          var netData = {};
+          var geneName = "";
+          var vidHighlight = -1;
+          readChrs()
+
+          function showChrs() {         
+            var html = "Chr&nbsp&nbsp";
+            _.each(chrs, function(chr) {
+              html += '<div class="form-check-inline"><label class="form-check-label"><input type="radio" class="form-check-input" id="chr' + chr + '" name="optradio">' + chr + '</label></div>\n';
+            });
+            $("#chrCheck").append(html);
+            html = '<div class="btn-group"><button type="button" class="btn btn-primary" onclick="checkSelected()">load</button></div>'
+            $("#chrCheck").append(html);
+          }
+          function showTissues() {         
+            var html = "Tissues&nbsp&nbsp";
+            _.each(tissues, function(t) {
+              html += '<div class="form-check-inline"><label class="form-check-label"><input type="checkbox" class="form-check-input" id="tissue' + t + '" name="optchbox">' + t + '</label></div>\n';
+            });
+            $("#tissuesCheck").append(html);
+            html = 
+              '<div class="btn-group">' +
+                  '<div class="input-group">' +
+                      '<input type="text" class="form-control" placeholder="" id="input1" maxlength=16 size=12>' +
+                      // '<span class="input-group-addon" onclick="inputValue(\'input1\')">Search</span>' +
+                  '</div></div>' +
+              '</div></div>'
+            html += '<div class="btn-group"><button type="button" class="btn btn-primary" onclick="uploadTissues()">upload</button></div>'
+            html += '<div class="btn-group"><button type="button" class="btn btn-primary" onclick="nextComp()">next</button></div>'
+            html += '<div class="btn-group"><button type="button" class="btn btn-primary" onclick="prevComp()">prev</button></div>'
+
+            $("#tissuesCheck").append(html);
+          }
+
+          function checkedChr() {
+            var rc = [];
+            _.each(chrs, function(ch) { if (document.getElementById('chr' + ch).checked) rc.push(ch); });
+            return rc;
+          }          
+          function checkSelected() { 
+            var selected = checkedChr();
+            if (selected.length === 1) {
+              ch = selected[0];
+              var chs = (ch === "X") ? "23" : ch;
+              // var cfileName = "./chr" + chs + "_result_100.csv";
+              var cfileName = "./ic-" + chs + "-17-17-100-10-0.750000-0.250000.csv";
+              // ic-6-17-17-100-10-0.750000-0.250000
+              readCC(cfileName);
+              document.getElementById("chrCheck").style.visibility = "hidden";
+            }
+          }
+          function checkedTissues() { 
+            var rc = [];
+            _.each(tissues, function(t) { 
+              if (document.getElementById('tissue' + t).checked) 
+                rc.push(t); 
+            });
+            return rc;
+          };
+          function readChrs() {
+            d3.json(gfileName, function(error, gdata) {
+                chrsdata = gdata;
+                console.log("chrsdata", chrsdata);
+                showChrs();
+            });
+          }
+          function readCC(cfileName) {
+            d3.csv(cfileName, function(error, cdata) {
+                compdata = cdata;
+                console.log("compdata", compdata);
+                initData();
+            });
+          }
+          function tissueListFromBits(bs) {
+            tl = []
+            _.each(chrsdata[ch].bits, function(b, t) {
+              if ((b & bs) === b) tl.push(t);
+            })
+            return tl;
+          }
+          function bitsOfTissueList(tl) {
+            bs = 0;
+            _.each(tl, function(t) { bs |= chrsdata[ch].bits[t]; });
+            return bs;
+          }
+          function edgeDId(e) { return e[0] + "#" + e[1]; }
+          function subEdges(edges, bs) {
+            var newedges = _.filter(edges, function(e) { return (bs & e[2]) === bs; });
+            return newedges;
+          }
+          function getAdj(edges) {
+            var adj = {}
+            _.each(edges, function(e) {
+              if (adj[e[0]] === undefined) adj[e[0]] = [];
+              adj[e[0]].push(e[1]);
+              if (adj[e[1]] === undefined) adj[e[1]] = [];
+              adj[e[1]].push(e[0]);
+            });
+            return adj;
+          }
+          function connComp(adj, r) {
+            var comp = [];
+            var stack = [r];
+            var touch = {};
+            touch[r] = true;
+            while (stack.length > 0) {
+              v = stack.pop();
+              comp.push(+v);
+              if (adj[v] !== undefined)
+              for(i in adj[v]) {
+                w = adj[v][i];
+                if (touch[w] === undefined) {
+                    stack.push(+w);
+                    touch[w] = true;
+                }
+              };
+            }
+            return comp;
+          }          
+          function edgesWithNodes(edges, nodes) {
+            var newedges = [];
+            var nodeSet = new Set(nodes);
+            _.each(edges, function(e) {
+              if (nodeSet.has(e[0]) || nodeSet.has(e[1]))
+                newedges.push(e)
+            });
+            return newedges;
+          }
+          function createGraph(edges) {
+            var graph = {nodes: [], edges: []};
+            var nodeSet = new Set();
+            _.each(edges, function(e) {
+              for (i in [0, 1])
+                if (!nodeSet.has(e[i])) {
+                  var v = nodeMap[e[i]];
+                  var node = {id: e[i]};
+                  var label = "";
+                  if (v[2] != ".") {
+                    label +=  v[2].toString();
+                    node.shape = "square";
+                  }
+                  label += "(" + v[0].toString() + ")";
+                  node.label = label;
+                  node.title = label;
+                  if (geneName !== "" && hasGene(e[i], geneName))
+                    node.color = {border:"yellow", background: "rgba(128,0,128,1)"};
+                  graph.nodes.push(node);
+                  nodeSet.add(e[i]);
+                }
+                graph.edges.push({id: edgeDId(e), from: e[0], to: e[1], bits: e[2], title: tissueListFromBits(e[2]).toString()})
+            });
+            return graph;
+          }
+          function initData() {
+            chrs = _.keys(chrsdata[ch].bits);
+            baseEdges = chrsdata[ch].edges;
+            _.each(chrsdata[ch].nodes, function(v) { nodeMap[v[0]] = v; });
+            ninfo = -1;
+            currCompdata = compdata;
+            showTissues();
+            nextComp();
+          }
+          function nextComp() {
+            ninfo++;
+            setComp()
+          }
+          function prevComp() {
+            ninfo--;
+            setComp()
+          }
+          function setComp() {
+            var n = currCompdata.length;
+            if (n < 1) return; 
+            ninfo = (ninfo + n) % n;
+            var info = currCompdata[ninfo];
+            getGraph(info);
+          }
+          function getGraph(cinfo) {
+            var sedges = subEdges(baseEdges, +cinfo.basetissues);
+            var compNodes = connComp(getAdj(sedges), cinfo.from);
+            var compEdges = edgesWithNodes(sedges, compNodes);
+            initCompTissueSet(compEdges, +cinfo.basetissues);
+
+            var graph = createGraph(compEdges);
+            console.log("graph", graph);
+
+            drawGraph(graph);
+            setTitle(ch);
+          }
+          function initCompTissueSet(compEdges, basetissues) {
+            var bs = 0;
+            _.each(compEdges, function(e) { bs |= e[2]; });
+
+            console.log("initCompTissueSet basetissues", tissueListFromBits(basetissues))
+            console.log("initCompTissueSet bs", tissueListFromBits(bs))
+
+            _.each(tissues, function(t) {
+              document.getElementById('tissue' + t).checked = false;
+              if ((chrsdata[ch].bits[t] & bs) === 0)
+                document.getElementById('tissue' + t).disabled = true;
+              else
+                  document.getElementById('tissue' + t).disabled = false;
+            });
+            _.each(tissueListFromBits(basetissues), function (t) {
+              document.getElementById('tissue' + t).disabled = true;
+              document.getElementById('tissue' + t).checked = true;
+            });
+          }
+          function setTitle(ch) {
+              var info = currCompdata[ninfo];
+              var title = "chr = " + ch
+                      + "; component #" + (ninfo + 1).toString() + "(of " + currCompdata.length.toString() + ") with "
+                      + info.V + " nodes and " + info.E + " edges."
+                      + "; tissues [" + tissueListFromBits(+info.basetissues).toString() + "], "
+                      + "; >= 75% [" + tissueListFromBits(+info.atissues).toString() + "], "
+                      + "; <= 25% [" + tissueListFromBits(+info.btissues).toString() + "]"
+                      ;
+              $("#title").html(title);
+          }
+          function hasGene(vid, gn){
+            var v = nodeMap[vid]
+            if (v != undefined && v[2] !== ".") 
+              for(var i in v[2]) {
+                if (v[2][i] === gn) 
+                  return true;
+              }
+            return false
+          }
+          function uploadTissues() {
+            if (netData.network !== undefined) {
+              var gn = (document.getElementById("input1").value).trim();
+              if (gn !== geneName) {
+                console.log("uploadTissues", [gn, geneName]);
+                if (gn === "") {
+                  currCompdata = compdata;
+                  geneName = gn;
+                }
+                else{
+                  currCompdata = [];
+                  vidHighlight = -1;
+                  for (var i in compdata) {
+                    var cinfo = compdata[i];
+                    var hasG = false;
+                    var sedges = subEdges(baseEdges, +cinfo.basetissues);
+                    var compNodes = connComp(getAdj(sedges), cinfo.from);
+                    for(var j in compNodes) { 
+                      var vid = compNodes[j];
+                      hasG |= hasGene(vid, gn); 
+                    };
+                    if (hasG) 
+                      currCompdata.push(cinfo);
+                  };
+                  if (currCompdata.length > 0) {
+                    console.log("uploadTissues currCompdata::", geneName, gn, currCompdata.length, compdata.length)
+                    ninfo = -1;
+                    geneName = gn;
+                    nextComp()
+                  }
+                  else {
+                    console.log("uploadTissues currCompdata has not gene::", geneName, gn, currCompdata.length, compdata.length)
+                    currCompdata = compdata;
+                    geneName = "";
+                    document.getElementById("input1").value = geneName;
+                  }
+                }
+              }
+              var chTissues = checkedTissues();
+              var bs = bitsOfTissueList(chTissues);
+              var edges = netData.data.edges.get();
+              var values = [];
+              _.each(edges, function(e) {
+                var i = 1;
+                if ((e.bits & bs) !== bs)
+                  values.push({id: e.id, color: "rgba(30,144,255,0.1)", dashes: [4, 8], width: 4})
+                else
+                  values.push({id: e.id, color: "rgba(30,144,255,0.1)", dashes: [], width: 6})
+
+              })
+              netData.data.edges.update(values);
+            }
+          }
+          function drawGraph(graph) {
+              var nodes = new vis.DataSet({});
+              _.each(graph.nodes, function(node) {
+                  var info = node;
+                  nodes.add(info);
+              });
+              var edges = new vis.DataSet({});
+              _.each(graph.edges, function(link) {
+                  var info = link;
+                  edges.add(info);
+              });
+              /* create a network */
+              var container = document.getElementById('mynetwork');
+              var data = {
+                  nodes: nodes,
+                  edges: edges,
+              };
+              var options = {
+                  nodes: {
+                      borderWidth: 1.75,
+                      shape: 'dot',
+                      scaling: {
+                          min: 10,
+                          max: 36,
+                      },
+                      font: {
+                          multi: 'html',
+                          size: 12,
+                          face: 'Tahoma'
+                      },
+                      color: {
+                          border: "white",
+                          background: "rgba(65,105,225,1)",
+                          highlight: {background: "rgba(0,0,139,1)", border: "yellow"},
+                      },
+                      // font: {
+                      //     align: "middle",
+                      //     multi: 'html',
+                      //     size: 14,
+                      //     face: 'Tahoma',
+                      // },
+                  },
+                  edges: {
+                      arrows: "to",
+                      width: 6,
+                      color: {
+                        color: "rgba(30,144,255,1)", 
+                        inherit: false,
+                      },
+                      smooth: false,
+                      scaling: {
+                          min: 1,
+                          max: 20,
+                      },
+                      font: {
+                          multi: 'html',
+                          size: 16,
+                          face: 'Tahoma'
+                      },
+                  },
+                  physics: {
+                      stabilization: false,
+                      barnesHut: {
+                          gravitationalConstant: -10000,
+                          // springConstant: 0.0075,
+                          springConstant: 0.015,
+                          springLength: 20,
+                          damping: 0.09,
+                      },
+                  },
+                  interaction: {
+                      tooltipDelay: 200,
+                      // hideEdgesOnDrag: true
+                  },
+                  // physics: {
+                  //     stabilization: false,
+                  //     barnesHut: {
+                  //         gravitationalConstant: -10000,
+                  //         springConstant: 0.05,
+                  //         springLength: 20,
+                  //         damping: 0.09,
+                  //     },
+                  // },
+                  // interaction: {
+                  //     tooltipDelay: 200,
+                  // },
+              };
+              var network = new vis.Network(container, data, options);
+              network.on("dragEnd", function(params) {
+                  for (var i = 0; i < params.nodes.length; i++) {
+                      var nodeId = params.nodes[i];
+                      nodes.update({id: nodeId, fixed: {x: true, y: true}});
+                  }
+              });
+              network.on('dragStart', function(params) {
+                  for (var i = 0; i < params.nodes.length; i++) {
+                      var nodeId = params.nodes[i];
+                      nodes.update({id: nodeId, fixed: {x: false, y: false}});
+                  }
+              });
+              netData.network = network;
+              netData.data = data;
+          }
+        </script>
+    </body>
+</html>
