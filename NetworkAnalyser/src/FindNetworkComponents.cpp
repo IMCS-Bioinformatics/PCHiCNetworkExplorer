@@ -272,7 +272,9 @@ int main(int argc, char *argv[]) {
 		}
 
 		int tmp = more_count * less_count;
-		fprintf(outputfile,"1 %d %d %d\n", component.size(), component_edge_count / 2, tmp);// list of vertices
+		double sqrt_result = sqrt(tmp);
+
+		fprintf(outputfile,"1 %d %d %.2lf\n", component.size(), component_edge_count / 2, sqrt_result);// list of vertices
 		
 		fprintf(outputfile,"2 ");
 		int basecount=0;
@@ -315,7 +317,7 @@ int main(int argc, char *argv[]) {
 		amask = atissues;
 		bmask = btissues;
 		
-		fprintf(csv_outputfile, "%d,%d,%d,%d,%lld,", component.size(),component_edge_count / 2,tmp,basecount,MASK);
+		fprintf(csv_outputfile, "%d,%d,%.2lf,%d,%lld,", component.size(),component_edge_count / 2,sqrt_result,basecount,MASK);
 		fprintf(csv_outputfile,"%d,%lld,%d,%lld,%lld,%lld\n",more_count, amask, less_count, bmask ,number_to_vertex[one_edge_end], number_to_vertex[another_edge_end]);
 				
 
